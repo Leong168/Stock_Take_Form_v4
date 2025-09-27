@@ -115,7 +115,6 @@
     }
   };
   
-  // Function to ensure we have a fresh Html5Qrcode instance
   function createScannerInstance() {
     html5QrCode = new Html5Qrcode("reader");
   }
@@ -154,7 +153,6 @@
     document.getElementById("scanner-controls").classList.add("d-none");
     document.getElementById("reader").classList.remove("d-none"); 
 
-    // Always ensure a clean instance when starting
     createScannerInstance();
 
     if (preferredCameraId) {
@@ -215,18 +213,16 @@
     handleScan(manualSku);
     document.getElementById("manualSkuInput").value = ''; 
     
-    // Always show the restart button after manual input
     document.getElementById("scanner-controls").classList.remove("d-none");
     
-    // Explicitly stop the scanner to free resources
+    // Explicitly stop the scanner
     if (html5QrCode && (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
         html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED)) {
         
-        // Hide the video element
         document.getElementById("reader").classList.add("d-none");
         
         html5QrCode.stop().then(() => {
-          html5QrCode = null; // Clean up the instance
+          html5QrCode = null; 
         }).catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
         });
@@ -243,7 +239,7 @@
     document.getElementById('quantity').focus();
   }
 
-  // MODIFIED: This now calls the reliable toggleScanner() function
+  // MODIFIED: This now forces a stop/clean-up and shows the button
   function addEntry() {
     const qty = parseInt(document.getElementById('quantity').value);
     if (!qty || qty <= 0) {
@@ -265,29 +261,46 @@
     saveEntries();
     document.getElementById('form-section').classList.add('d-none');
     
-    // NEW FIX: Force a reliable stop/start to clear the PAUSED state.
-    toggleScanner(); 
+    // FIX 1: Unconditionally show the start button immediately.
+    document.getElementById("scanner-controls").classList.remove("d-none");
+    
+    // FIX 2: Call the toggleScanner with the forceStop flag to ensure the camera stream is shut down.
+    toggleScanner(true); 
   }
 
   // MODIFIED: Universal function to start/restart the scanner (Aggressive Fix)
-  function toggleScanner() {
-    document.getElementById("scanner-controls").classList.add("d-none");
+  function toggleScanner(forceStop = false) {
     
-    // Check if the scanner is currently running or paused (i.e., we have an active stream)
+    // If we only want to stop (called from addEntry)
+    if (forceStop) {
+        if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+            html5QrCode.stop().then(() => {
+                html5QrCode = null;
+                document.getElementById("reader").classList.add("d-none");
+            }).catch(e => {
+                console.warn("Error during forced stop:", e);
+                html5QrCode = null;
+            });
+        }
+        return; // Don't proceed to restart if we only wanted to stop
+    }
+
+    // --- Logic for when the user clicks the "Start Scan" button ---
+    document.getElementById("scanner-controls").classList.add("d-none");
+
     if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
         
-        // Force a full stop and then restart to clear any stuck state (PAUSED state)
+        // If the scanner is active (paused or running), force a full stop and then restart
         html5QrCode.stop().then(() => {
-            html5QrCode = null; // Clear the instance
-            startScanner(); // Restart from scratch
+            html5QrCode = null; 
+            startScanner(); 
         }).catch(err => {
             console.warn("Error stopping scanner for restart:", err);
-            // If stop fails, attempt a simple start anyway
             html5QrCode = null;
             startScanner();
         });
     } else {
-        // If NOT_STARTED (the clean state), just start it
+        // If NOT_STARTED, just start it
         startScanner();
     }
   }
