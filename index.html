@@ -53,6 +53,10 @@
     </div>
 
     <div id="reader" class="mb-3"></div>
+    
+    <div id="scanner-controls" class="mb-3 text-center d-none">
+      <button id="startScanButton" class="btn btn-success w-75" onclick="rescan()">▶️ Start Scan</button>
+    </div>
 
     <div id="form-section" class="d-none">
       <div class="card p-3 shadow-sm">
@@ -143,6 +147,9 @@
   }
 
   function startScanner() {
+    // Hide the Start Scan button when starting the scanner
+    document.getElementById("scanner-controls").classList.add("d-none"); 
+
     Html5Qrcode.getCameras().then(cameras => {
       if (!cameras || cameras.length === 0) {
         alert("No camera found.");
@@ -173,7 +180,7 @@
     });
   }
 
-  // Function to handle manual SKU input
+  // MODIFIED: Function to handle manual SKU input (Now shows the Start Scan button)
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -190,13 +197,17 @@
     if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
         html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
         
-        html5QrCode.stop().catch(err => {
+        html5QrCode.stop().then(() => {
+            // Show the manual restart button ONLY after the scanner is successfully stopped
+            document.getElementById("scanner-controls").classList.remove("d-none");
+        }).catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
+            // If stop fails, still show the button as a fallback
+            document.getElementById("scanner-controls").classList.remove("d-none");
         });
     }
   }
 
-  // Modified to handle both scanned and manual SKUs
   function handleScan(sku) {
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
@@ -230,10 +241,12 @@
     rescan(); 
   }
 
-  // FIX: Ensures the scanner restarts if it was stopped (manual) or resumes (QR scan).
   function rescan() {
     document.getElementById('form-section').classList.add('d-none');
     
+    // Hide the Start Scan button whenever rescan is called (as we are trying to start/resume)
+    document.getElementById("scanner-controls").classList.add("d-none");
+
     const currentState = html5QrCode.getState();
 
     if (currentState === Html5Qrcode.Html5QrcodeStates.PAUSED) {
