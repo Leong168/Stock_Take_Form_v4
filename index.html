@@ -147,7 +147,7 @@
   }
 
   function startScanner() {
-    // Hide the Start Scan button when starting the scanner
+    // FIX: Ensure button is hidden when the scanner is about to start
     document.getElementById("scanner-controls").classList.add("d-none"); 
 
     Html5Qrcode.getCameras().then(cameras => {
@@ -180,7 +180,7 @@
     });
   }
 
-  // MODIFIED: Function to handle manual SKU input (Now shows the Start Scan button)
+  // MODIFIED: Function to handle manual SKU input (Guarantees button appears after stop)
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -198,7 +198,7 @@
         html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
         
         html5QrCode.stop().then(() => {
-            // Show the manual restart button ONLY after the scanner is successfully stopped
+            // FIX: Show the restart button ONLY after the scanner is successfully stopped
             document.getElementById("scanner-controls").classList.remove("d-none");
         }).catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
