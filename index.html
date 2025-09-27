@@ -173,7 +173,7 @@
     });
   }
 
-  // NEW function to handle manual SKU input
+  // Function to handle manual SKU input
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -230,19 +230,21 @@
     saveEntries();
     document.getElementById('form-section').classList.add('d-none');
     
-    // Resume the scanner to prepare for the next scan
+    // Resume or Restart the scanner
     rescan(); 
   }
 
-  // Modified to ensure scanner resumes or restarts correctly
+  // FIX: Ensures the scanner restarts if it was stopped (e.g., by manual input)
   function rescan() {
     document.getElementById('form-section').classList.add('d-none');
     
-    // Check scanner state and resume/restart accordingly
-    if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
+    const currentState = html5QrCode.getState();
+
+    if (currentState === Html5Qrcode.Html5QrcodeStates.PAUSED) {
+      // If paused (e.g., after a QR scan), resume it.
       html5QrCode.resume();
-    } else if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-      // Restart the scanner if it was stopped (e.g., by manual input)
+    } else if (currentState === Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+      // If stopped (e.g., after manual input), restart it.
       startScanner();
     }
   }
