@@ -173,7 +173,7 @@
     });
   }
 
-  // Function to handle manual SKU input
+  // MODIFIED: Function to handle manual SKU input
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -182,21 +182,18 @@
       return;
     }
 
-    // Stop the scanner completely to prevent conflicts
-    if (html5QrCode.isScanning || html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
-      html5QrCode.stop().then(() => {
-        handleScan(manualSku);
-        document.getElementById("manualSkuInput").value = ''; // Clear input
-      }).catch(err => {
-        console.error("Error stopping scanner for manual entry:", err);
-        // Proceed even if stopping failed
-        handleScan(manualSku);
-        document.getElementById("manualSkuInput").value = '';
-      });
-    } else {
-      // If scanner wasn't running, just proceed
-      handleScan(manualSku);
-      document.getElementById("manualSkuInput").value = '';
+    // Set SKU and show form
+    handleScan(manualSku);
+    document.getElementById("manualSkuInput").value = ''; 
+    
+    // Explicitly stop the scanner to free resources, but don't wait for it
+    // The restart is handled later in rescan()
+    if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
+        html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
+        
+        html5QrCode.stop().catch(err => {
+            console.warn("Error stopping scanner during manual entry:", err);
+        });
     }
   }
 
@@ -234,7 +231,7 @@
     rescan(); 
   }
 
-  // FIX: Ensures the scanner restarts if it was stopped (e.g., by manual input)
+  // FIX: Ensures the scanner restarts if it was stopped.
   function rescan() {
     document.getElementById('form-section').classList.add('d-none');
     
@@ -244,7 +241,7 @@
       // If paused (e.g., after a QR scan), resume it.
       html5QrCode.resume();
     } else if (currentState === Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-      // If stopped (e.g., after manual input), restart it.
+      // If stopped (e.g., after manual input), restart it completely.
       startScanner();
     }
   }
