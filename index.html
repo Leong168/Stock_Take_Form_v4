@@ -69,7 +69,7 @@
           <input type="number" id="quantity" class="form-control" min="1">
         </div>
         <button class="btn btn-primary w-100" onclick="addEntry()">Add to List 添加到列表</button>
-        </div>
+      </div>
     </div>
 
     <div class="mt-4">
@@ -117,16 +117,7 @@
   
   // Function to ensure we have a fresh Html5Qrcode instance
   function createScannerInstance() {
-    if (html5QrCode) {
-      // Attempt a clean stop before creating a new instance
-      try {
-        if (html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-          html5QrCode.stop().catch(e => console.warn("Error stopping old scanner:", e));
-        }
-      } catch (e) {
-         console.warn("Could not stop scanner gracefully.");
-      }
-    }
+    // We do not stop the old one here, we let the calling function handle stop/cleanup
     html5QrCode = new Html5Qrcode("reader");
   }
 
@@ -176,7 +167,6 @@
     Html5Qrcode.getCameras().then(cameras => {
       if (!cameras || cameras.length === 0) {
         alert("No camera found.");
-        // If no camera, show the manual restart button anyway
         document.getElementById("scanner-controls").classList.remove("d-none");
         return;
       }
@@ -275,30 +265,35 @@
     saveEntries();
     document.getElementById('form-section').classList.add('d-none');
     
-    // After adding an entry, the scanner should be re-engaged.
-    // If it was QR scanned, it's paused, so we can try to resume.
-    // If it was manual, it is stopped, and the user must click the button.
-    
-    // We try to resume if possible, otherwise we do nothing and wait for user click.
+    // After adding an entry, we try to resume if it was paused by a QR scan.
     if (html5QrCode && html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
-        // This handles the case where a QR scan paused it.
         html5QrCode.resume();
         document.getElementById("scanner-controls").classList.add("d-none");
-    } else {
-        // If it was manual entry, the button is already visible, waiting for user click.
     }
+    // If it was manual entry (NOT_STARTED), the button remains visible for the user to click.
   }
 
-  // NEW: Universal function to start/restart the scanner
+  // MODIFIED: Universal function to start/restart the scanner (Aggressive Fix)
   function toggleScanner() {
-    // If the scanner exists and is paused, resume it.
-    if (html5QrCode && html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
-        html5QrCode.resume();
+    document.getElementById("scanner-controls").classList.add("d-none");
+    
+    // Check if the scanner is currently running or paused
+    if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+        
+        // Force a full stop and then restart to clear any stuck state (PAUSED state)
+        html5QrCode.stop().then(() => {
+            html5QrCode = null; // Clear the instance
+            startScanner(); // Restart from scratch
+        }).catch(err => {
+            console.warn("Error stopping scanner for restart:", err);
+            // If stop fails, attempt a simple start anyway
+            html5QrCode = null;
+            startScanner();
+        });
     } else {
-        // Otherwise, perform a full start/restart
+        // If NOT_STARTED (the clean state), just start it
         startScanner();
     }
-    document.getElementById("scanner-controls").classList.add("d-none");
   }
 
   // --- Helper Functions (Remaining the same) ---
