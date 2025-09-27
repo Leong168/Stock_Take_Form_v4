@@ -55,7 +55,7 @@
     <div id="reader" class="mb-3"></div>
     
     <div id="scanner-controls" class="mb-3 text-center d-none">
-      <button id="startScanButton" class="btn btn-success w-100" onclick="toggleScanner()">▶️ Start Scan</button>
+      <button id="startScanButton" class="btn btn-success w-100" onclick="startScanner()">▶️ Restart Scanner</button>
     </div>
 
     <div id="form-section" class="d-none">
@@ -104,6 +104,8 @@
   let userLocation = '';
   let preferredCameraId = null; 
   let html5QrCode = null; 
+  // NEW FLAG: Controls when to accept a scan result
+  let isProcessing = false; 
 
   const qrConfig = {
     fps: 15,
@@ -152,9 +154,25 @@
   function startScanner() {
     document.getElementById("scanner-controls").classList.add("d-none");
     document.getElementById("reader").classList.remove("d-none"); 
+    isProcessing = false; // Ensure we are ready to scan
 
-    createScannerInstance();
+    // Stop existing scanner if running before creating new one
+    if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+        html5QrCode.stop().then(() => {
+            createScannerInstance();
+            findCameraAndStart();
+        }).catch(e => {
+            console.warn("Could not stop old scanner, starting new one anyway:", e);
+            createScannerInstance();
+            findCameraAndStart();
+        });
+    } else {
+        createScannerInstance();
+        findCameraAndStart();
+    }
+  }
 
+  function findCameraAndStart() {
     if (preferredCameraId) {
         startCameraWithId(preferredCameraId);
         return;
@@ -185,11 +203,10 @@
         { deviceId: { exact: cameraId } },
         qrConfig,
         qrMessage => {
-          // Scanner success: PAUSE the scanner and handle the SKU
-          html5QrCode.pause(); 
-          handleScan(qrMessage);
-          // Show the start button as an option to resume scanning
-          document.getElementById("scanner-controls").classList.remove("d-none");
+          // NO PAUSE! Use the isProcessing flag instead.
+          if (!isProcessing) {
+              handleScan(qrMessage);
+          }
         },
         errorMessage => {
           // console.warn("Scan error", errorMessage);
@@ -201,7 +218,7 @@
       });
   }
 
-  // Stops scanner and shows the Start Scan button for manual input
+  // Stops scanner and shows the Restart button for manual input
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -213,13 +230,10 @@
     handleScan(manualSku);
     document.getElementById("manualSkuInput").value = ''; 
     
-    document.getElementById("scanner-controls").classList.remove("d-none");
-    
-    // Explicitly stop the scanner
-    if (html5QrCode && (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
-        html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED)) {
-        
+    // Explicitly stop the camera and show the restart button
+    if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
         document.getElementById("reader").classList.add("d-none");
+        document.getElementById("scanner-controls").classList.remove("d-none");
         
         html5QrCode.stop().then(() => {
           html5QrCode = null; 
@@ -227,11 +241,14 @@
             console.warn("Error stopping scanner during manual entry:", err);
         });
     } else {
+        document.getElementById("scanner-controls").classList.remove("d-none");
         html5QrCode = null;
     }
   }
 
   function handleScan(sku) {
+    // Flag set to prevent re-scanning the same code while user inputs quantity
+    isProcessing = true; 
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
     document.getElementById('quantity').value = '';
@@ -239,7 +256,6 @@
     document.getElementById('quantity').focus();
   }
 
-  // MODIFIED: This now forces a stop/clean-up and shows the button
   function addEntry() {
     const qty = parseInt(document.getElementById('quantity').value);
     if (!qty || qty <= 0) {
@@ -261,48 +277,11 @@
     saveEntries();
     document.getElementById('form-section').classList.add('d-none');
     
-    // FIX 1: Unconditionally show the start button immediately.
-    document.getElementById("scanner-controls").classList.remove("d-none");
+    // Reset flag to allow scanning of the next QR code immediately
+    isProcessing = false; 
     
-    // FIX 2: Call the toggleScanner with the forceStop flag to ensure the camera stream is shut down.
-    toggleScanner(true); 
-  }
-
-  // MODIFIED: Universal function to start/restart the scanner (Aggressive Fix)
-  function toggleScanner(forceStop = false) {
-    
-    // If we only want to stop (called from addEntry)
-    if (forceStop) {
-        if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-            html5QrCode.stop().then(() => {
-                html5QrCode = null;
-                document.getElementById("reader").classList.add("d-none");
-            }).catch(e => {
-                console.warn("Error during forced stop:", e);
-                html5QrCode = null;
-            });
-        }
-        return; // Don't proceed to restart if we only wanted to stop
-    }
-
-    // --- Logic for when the user clicks the "Start Scan" button ---
-    document.getElementById("scanner-controls").classList.add("d-none");
-
-    if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-        
-        // If the scanner is active (paused or running), force a full stop and then restart
-        html5QrCode.stop().then(() => {
-            html5QrCode = null; 
-            startScanner(); 
-        }).catch(err => {
-            console.warn("Error stopping scanner for restart:", err);
-            html5QrCode = null;
-            startScanner();
-        });
-    } else {
-        // If NOT_STARTED, just start it
-        startScanner();
-    }
+    // If the scanner was stopped (manual entry), the restart button is visible.
+    // If the scanner is running (QR scan), it continues to run.
   }
 
   // --- Helper Functions ---
