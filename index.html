@@ -103,10 +103,9 @@
   let entries = [];
   let userName = '';
   let userLocation = '';
-  // NEW: Global variable to store the camera ID for reliable restarts
   let preferredCameraId = null; 
-
-  const html5QrCode = new Html5Qrcode("reader");
+  // html5QrCode is now mutable
+  let html5QrCode = null; 
 
   const qrConfig = {
     fps: 15,
@@ -117,6 +116,23 @@
       useBarCodeDetectorIfSupported: true
     }
   };
+  
+  // NEW: Function to ensure we have a fresh Html5Qrcode instance
+  function createScannerInstance() {
+    if (html5QrCode) {
+      // Try to stop/clear the existing one before creating a new one
+      try {
+        if (html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+          html5QrCode.stop().catch(e => console.warn("Error stopping old scanner:", e));
+        }
+      } catch (e) {
+         console.warn("Could not stop scanner gracefully.");
+      }
+    }
+    // Re-create the scanner instance
+    html5QrCode = new Html5Qrcode("reader");
+  }
+
 
   function submitLogin() {
     const name = document.getElementById("username").value.trim();
@@ -148,11 +164,14 @@
   }
 
   function startScanner() {
-    // FIX: Ensure button is hidden when the scanner is about to start
     document.getElementById("scanner-controls").classList.add("d-none"); 
 
+    // Always ensure a clean instance when starting
+    if (!html5QrCode || html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+      createScannerInstance();
+    }
+
     if (preferredCameraId) {
-        // Quick restart if ID is known
         startCameraWithId(preferredCameraId);
         return;
     }
@@ -165,7 +184,7 @@
       }
 
       const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[0];
-      preferredCameraId = backCamera.id; // Store ID
+      preferredCameraId = backCamera.id;
       
       startCameraWithId(preferredCameraId);
 
@@ -175,7 +194,6 @@
     });
   }
   
-  // NEW: Dedicated function to start the camera using the stored ID
   function startCameraWithId(cameraId) {
       html5QrCode.start(
         { deviceId: { exact: cameraId } },
@@ -191,12 +209,10 @@
       ).catch(err => {
         console.error("Start error:", err);
         alert("Unable to start camera. Please check permissions.");
-        // If it fails to start, show the button as a manual override fallback
         document.getElementById("scanner-controls").classList.remove("d-none");
       });
   }
 
-  // FIX: Function to handle manual SKU input (Guarantees button appears immediately)
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -205,20 +221,24 @@
       return;
     }
 
-    // Set SKU and show form
     handleScan(manualSku);
     document.getElementById("manualSkuInput").value = ''; 
     
-    // FIX: Show the restart button immediately!
+    // Show the restart button immediately
     document.getElementById("scanner-controls").classList.remove("d-none");
     
     // Explicitly stop the scanner to free resources
-    if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
-        html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
+    if (html5QrCode && (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
+        html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED)) {
         
-        html5QrCode.stop().catch(err => {
+        html5QrCode.stop().then(() => {
+          // Clear the instance to ensure a clean start on rescan
+          html5QrCode = null; 
+        }).catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
         });
+    } else {
+        html5QrCode = null;
     }
   }
 
@@ -258,16 +278,15 @@
   function rescan() {
     document.getElementById('form-section').classList.add('d-none');
     
-    // Hide the Start Scan button whenever rescan is called (as we are trying to start/resume)
+    // Hide the Start Scan button whenever rescan is called
     document.getElementById("scanner-controls").classList.add("d-none");
 
-    const currentState = html5QrCode.getState();
-
-    if (currentState === Html5Qrcode.Html5QrcodeStates.PAUSED) {
-      // If paused (after a QR scan), resume it.
+    // Check if the scanner instance exists and is merely paused
+    if (html5QrCode && html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
+      // Resume if it was just paused by a successful QR scan
       html5QrCode.resume();
-    } else if (currentState === Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
-      // If stopped (after manual input), restart it completely.
+    } else {
+      // If NOT_STARTED (after manual input or a broken state), force a full restart
       startScanner();
     }
   }
