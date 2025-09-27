@@ -103,6 +103,8 @@
   let entries = [];
   let userName = '';
   let userLocation = '';
+  // NEW: Global variable to store the camera ID for reliable restarts
+  let preferredCameraId = null; 
 
   const html5QrCode = new Html5Qrcode("reader");
 
@@ -132,7 +134,6 @@
     const saved = localStorage.getItem("sku_entries");
     if (saved) {
       entries = JSON.parse(saved).map(entry => {
-        // Add missing date field to old entries
         if (!entry.date) {
           entry.date = new Date().toISOString().split('T')[0];
         }
@@ -150,6 +151,13 @@
     // FIX: Ensure button is hidden when the scanner is about to start
     document.getElementById("scanner-controls").classList.add("d-none"); 
 
+    if (preferredCameraId) {
+        // Quick restart if ID is known
+        startCameraWithId(preferredCameraId);
+        return;
+    }
+    
+    // Find camera ID
     Html5Qrcode.getCameras().then(cameras => {
       if (!cameras || cameras.length === 0) {
         alert("No camera found.");
@@ -157,9 +165,20 @@
       }
 
       const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[0];
+      preferredCameraId = backCamera.id; // Store ID
+      
+      startCameraWithId(preferredCameraId);
 
+    }).catch(err => {
+      console.error("Camera error:", err);
+      alert("Could not access camera.");
+    });
+  }
+  
+  // NEW: Dedicated function to start the camera using the stored ID
+  function startCameraWithId(cameraId) {
       html5QrCode.start(
-        { deviceId: { exact: backCamera.id } },
+        { deviceId: { exact: cameraId } },
         qrConfig,
         qrMessage => {
           // Scanner success: immediately pause and handle the SKU
@@ -172,12 +191,9 @@
       ).catch(err => {
         console.error("Start error:", err);
         alert("Unable to start camera. Please check permissions.");
+        // If it fails to start, show the button as a manual override fallback
+        document.getElementById("scanner-controls").classList.remove("d-none");
       });
-
-    }).catch(err => {
-      console.error("Camera error:", err);
-      alert("Could not access camera.");
-    });
   }
 
   // FIX: Function to handle manual SKU input (Guarantees button appears immediately)
@@ -193,7 +209,7 @@
     handleScan(manualSku);
     document.getElementById("manualSkuInput").value = ''; 
     
-    // FIX: Show the restart button immediately before stopping the camera
+    // FIX: Show the restart button immediately!
     document.getElementById("scanner-controls").classList.remove("d-none");
     
     // Explicitly stop the scanner to free resources
@@ -202,7 +218,6 @@
         
         html5QrCode.stop().catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
-            // Even if stop fails, the button is already visible as a fallback.
         });
     }
   }
@@ -260,10 +275,8 @@
   function updateTable() {
     const tableBody = document.getElementById("entryTable");
     tableBody.innerHTML = '';
-    // Reverse the array to show the latest entry at the top of the table
     const reversedEntries = [...entries].reverse(); 
     reversedEntries.forEach((item, index) => {
-      // Index calculation for the original position
       const originalIndex = entries.length - index; 
       const row = `<tr>
         <td>${originalIndex}</td>
