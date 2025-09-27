@@ -180,7 +180,7 @@
     });
   }
 
-  // MODIFIED: Function to handle manual SKU input (Guarantees button appears after stop)
+  // FIX: Function to handle manual SKU input (Guarantees button appears immediately)
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -193,17 +193,16 @@
     handleScan(manualSku);
     document.getElementById("manualSkuInput").value = ''; 
     
+    // FIX: Show the restart button immediately before stopping the camera
+    document.getElementById("scanner-controls").classList.remove("d-none");
+    
     // Explicitly stop the scanner to free resources
     if (html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.SCANNING || 
         html5QrCode.getState() === Html5Qrcode.Html5QrcodeStates.PAUSED) {
         
-        html5QrCode.stop().then(() => {
-            // FIX: Show the restart button ONLY after the scanner is successfully stopped
-            document.getElementById("scanner-controls").classList.remove("d-none");
-        }).catch(err => {
+        html5QrCode.stop().catch(err => {
             console.warn("Error stopping scanner during manual entry:", err);
-            // If stop fails, still show the button as a fallback
-            document.getElementById("scanner-controls").classList.remove("d-none");
+            // Even if stop fails, the button is already visible as a fallback.
         });
     }
   }
