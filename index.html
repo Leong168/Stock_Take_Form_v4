@@ -111,9 +111,8 @@
   let html5QrCode = null; 
   let isProcessing = false; 
 
-  // FINAL: MOST PERMISSIVE CONFIGURATION
   const qrConfig = {
-    fps: 20, 
+    fps: 15,
     qrbox: { width: 250, height: 250 },
     aspectRatio: 1.0,
     rememberLastUsedCamera: true,
@@ -151,27 +150,9 @@
       updateTable();
     }
 
-    // --- FIX: GUARANTEED SCREEN TRANSITION FIRST ---
     document.getElementById("login-screen").classList.add("d-none");
     document.getElementById("main-app").classList.remove("d-none");
-    
-    // Attempt to start camera after a small delay to ensure DOM update
-    setTimeout(() => {
-        try {
-            startScanner();
-        } catch (e) {
-            console.error("Camera failed to start after login:", e);
-            failCameraStart("Camera hardware or permissions failed to initialize.");
-        }
-    }, 100); 
-  }
-
-  function failCameraStart(message) {
-      console.error(message);
-      // Ensure the user can still use the app
-      document.getElementById("reader").classList.add("d-none");
-      document.getElementById("scanner-controls").classList.remove("d-none");
-      alert("Error starting camera: " + message + " Please use the Manual Entry option.");
+    startScanner();
   }
 
   function startScanner() {
@@ -183,24 +164,29 @@
     if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
         html5QrCode.stop().then(() => {
             createScannerInstance();
-            findCameraAndStart(); 
+            findCameraAndStart(); // Start the new scanner
         }).catch(e => {
             console.warn("Could not stop old scanner, starting new one anyway:", e);
             createScannerInstance();
-            findCameraAndStart(); 
+            findCameraAndStart(); // Start the new scanner
         });
     } else {
         createScannerInstance();
-        findCameraAndStart(); 
+        findCameraAndStart(); // Start the new scanner
     }
   }
 
-  // --- FINAL SIMPLIFIED CAMERA START LOGIC ---
+  // --- NEW CAMERA START LOGIC TO PRIORITIZE REAR CAMERA ---
 
   function findCameraAndStart() {
-      // 1. Try to start the camera using the default video feed (no constraints).
+      // 1. Try to start the camera using the 'environment' facing mode first, 
+      // as this is the most reliable way on modern mobile browsers.
+      startCameraWithConstraints({ facingMode: { exact: "environment" } });
+  }
+
+  function startCameraWithConstraints(constraints) {
       html5QrCode.start(
-          { }, // Empty constraints object - rely on browser default
+          constraints,
           qrConfig,
           qrMessage => {
               if (!isProcessing) {
@@ -208,50 +194,61 @@
               }
           },
           (errorMessage) => {
-              console.warn("Direct start failed. Error:", errorMessage);
-              fallbackToCameraIdLookup(); 
+              console.warn("Start attempt failed with constraints. Error:", errorMessage);
+              
+              // Only call fallback logic if we failed with the initial 'environment' constraint
+              if (constraints && constraints.facingMode) {
+                  fallbackToCameraIdLookup();
+              } else {
+                  console.error("Camera access failed entirely.");
+                  alert("Could not access camera. Please check permissions.");
+                  document.getElementById("scanner-controls").classList.remove("d-none");
+              }
           }
       ).catch(err => {
-          console.error("Camera promise rejection:", err);
-          fallbackToCameraIdLookup(); 
+          console.error("Start error with constraints:", err);
+          
+          // Fallback if the promise rejects (often an access denial)
+          if (constraints && constraints.facingMode) {
+              fallbackToCameraIdLookup();
+          } else {
+              alert("Unable to start camera. Please check permissions.");
+              document.getElementById("scanner-controls").classList.remove("d-none");
+          }
       });
   }
 
   function fallbackToCameraIdLookup() {
+      if (preferredCameraId) {
+          startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
+          return;
+      }
+      
+      // Find camera ID
       Html5Qrcode.getCameras().then(cameras => {
         if (!cameras || cameras.length === 0) {
-          failCameraStart("No cameras found on device or browser access is restricted.");
+          alert("No camera found after fallback.");
+          document.getElementById("scanner-controls").classList.remove("d-none");
           return;
         }
 
-        // Use the first camera found (Camera ID lookup)
-        const firstCamera = cameras[0];
-        preferredCameraId = firstCamera.id;
-
-        // Try starting with the camera ID
-        html5QrCode.start(
-            { deviceId: { exact: preferredCameraId } },
-            qrConfig,
-            qrMessage => {
-                if (!isProcessing) {
-                    handleScan(qrMessage);
-                }
-            },
-            (errorMessage) => {
-                failCameraStart("Failed even with specific camera ID. Hardware issue suspected.");
-            }
-        ).catch(err => {
-            failCameraStart("Final camera start attempt failed. Hardware issue suspected.");
-        });
+        // Prioritize "back" label or the LAST camera (often the rear one)
+        const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[cameras.length - 1] || cameras[0];
+        preferredCameraId = backCamera.id;
+        
+        startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
 
       }).catch(err => {
-        failCameraStart("Could not enumerate cameras. Ensure you are running on HTTPS.");
+        console.error("Camera error during fallback:", err);
+        alert("Could not access camera.");
+        document.getElementById("scanner-controls").classList.remove("d-none");
       });
   }
   
-  // --- END FINAL SIMPLIFIED CAMERA START LOGIC ---
+  // --- END NEW CAMERA START LOGIC ---
 
 
+  // Stops scanner and shows the Restart button for manual input
   function submitManualSku() {
     const manualSku = document.getElementById("manualSkuInput").value.trim();
 
@@ -274,6 +271,7 @@
             console.warn("Error stopping scanner during manual entry:", err);
         });
     } else {
+        // If the scanner was already stopped or not started
         document.getElementById("scanner-controls").classList.remove("d-none");
         html5QrCode = null;
     }
@@ -281,15 +279,14 @@
 
   function handleScan(sku) {
     // Flag set to prevent re-scanning the same code while user inputs quantity
-    if (isProcessing) return;
     isProcessing = true; 
-
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
-    document.getElementById('quantity').value = '1'; 
+    document.getElementById('quantity').value = '1'; // Default to 1
     document.getElementById('form-section').classList.remove('d-none');
     document.getElementById('quantity').focus();
     
+    // Vibrate the device if supported for feedback
     if ('vibrate' in navigator) {
       navigator.vibrate(100); 
     }
@@ -329,6 +326,7 @@
     tableBody.innerHTML = '';
     const reversedEntries = [...entries].reverse(); 
     reversedEntries.forEach((item, index) => {
+      // Calculate original index (1-based count from the start of the full list)
       const originalIndex = entries.length - index; 
       const row = `<tr>
         <td>${originalIndex}</td>
@@ -354,6 +352,7 @@
     entries = [];
     saveEntries();
     updateTable();
+    // Re-hide the form section if it was visible
     document.getElementById('form-section').classList.add('d-none');
   }
 
