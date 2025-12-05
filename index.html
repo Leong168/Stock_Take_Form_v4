@@ -111,6 +111,7 @@
   let html5QrCode = null; 
   let isProcessing = false; 
 
+  // FINAL: MOST PERMISSIVE CONFIGURATION
   const qrConfig = {
     fps: 20, 
     qrbox: { width: 250, height: 250 },
@@ -189,12 +190,12 @@
     }
   }
 
-  // --- CAMERA START LOGIC (Uses the most permissive settings) ---
+  // --- CAMERA START LOGIC (Simplest Call) ---
 
   function findCameraAndStart() {
-      // 1. Try to start the camera using the default video feed (no constraints).
+      // This uses NO constraints {} - it just asks the browser for the default video stream.
       html5QrCode.start(
-          { }, // Empty constraints object - rely on browser default
+          {}, 
           qrConfig,
           qrMessage => {
               if (!isProcessing) {
@@ -202,44 +203,12 @@
               }
           },
           (errorMessage) => {
-              console.warn("Direct start failed. Error:", errorMessage);
-              fallbackToCameraIdLookup(); 
+              // If the simplest start fails, we go straight to the fail state
+              failCameraStart("Camera failed using the simplest start method. The issue is likely external (HTTPS/Conflicts).");
           }
       ).catch(err => {
-          console.error("Camera promise rejection:", err);
-          fallbackToCameraIdLookup(); 
-      });
-  }
-
-  function fallbackToCameraIdLookup() {
-      Html5Qrcode.getCameras().then(cameras => {
-        if (!cameras || cameras.length === 0) {
-          failCameraStart("No cameras found on device or browser access is restricted. (Check HTTPS)");
-          return;
-        }
-
-        // Use the first camera found (Camera ID lookup)
-        const firstCamera = cameras[0];
-        preferredCameraId = firstCamera.id;
-
-        // Try starting with the camera ID
-        html5QrCode.start(
-            { deviceId: { exact: preferredCameraId } },
-            qrConfig,
-            qrMessage => {
-                if (!isProcessing) {
-                    handleScan(qrMessage);
-                }
-            },
-            (errorMessage) => {
-                failCameraStart("Failed even with specific camera ID. Hardware issue suspected.");
-            }
-        ).catch(err => {
-            failCameraStart("Final camera start attempt failed. Hardware issue suspected.");
-        });
-
-      }).catch(err => {
-        failCameraStart("Could not enumerate cameras. Ensure you are running on HTTPS.");
+          // If the promise rejects (a definitive failure)
+          failCameraStart("Camera access denied by browser/OS.");
       });
   }
   
