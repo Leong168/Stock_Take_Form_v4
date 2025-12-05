@@ -111,7 +111,8 @@
   let isProcessing = false; 
 
   const qrConfig = {
-    fps: 20, 
+    // *** FIX: Reduced FPS for stability on problematic devices ***
+    fps: 10, 
     qrbox: { width: 250, height: 250 },
     aspectRatio: 1.0,
     rememberLastUsedCamera: true,
@@ -148,7 +149,6 @@
       updateTable();
     }
 
-    // GUARANTEED SCREEN TRANSITION
     document.getElementById("login-screen").classList.add("d-none");
     document.getElementById("main-app").classList.remove("d-none");
   }
@@ -288,7 +288,6 @@
         try {
             await html5QrCode.stop();
             document.getElementById("reader").classList.add("d-none");
-            // *** FIX: Show the restart button after a successful scan ***
             document.getElementById("scanner-controls").classList.remove("d-none");
             html5QrCode = null;
         } catch (err) {
@@ -300,7 +299,6 @@
     // 2. FILL FORM
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
-    // *** FIX: Remove default quantity of 1 ***
     document.getElementById('quantity').value = ''; 
     document.getElementById('form-section').classList.remove('d-none');
     document.getElementById('quantity').focus();
