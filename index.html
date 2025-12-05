@@ -111,7 +111,7 @@
   let isProcessing = false; 
 
   const qrConfig = {
-    // *** FIX: Reduced FPS for stability on problematic devices ***
+    // Retaining 10 FPS for stability
     fps: 10, 
     qrbox: { width: 250, height: 250 },
     aspectRatio: 1.0,
@@ -180,16 +180,12 @@
     }
   }
 
-  // --- CAMERA START LOGIC (Priority Rear, Fallback Front) ---
+  // --- CAMERA START LOGIC (Simplest Universal Call) ---
 
   function findCameraAndStart() {
-      // 1. Try to start the camera using the 'environment' facing mode (Rear Camera).
-      startCameraWithConstraints({ facingMode: { exact: "environment" } });
-  }
-
-  function startCameraWithConstraints(constraints) {
+      // Use the simplest constraints {} - asks the browser for the default, most stable video stream.
       html5QrCode.start(
-          constraints,
+          {}, 
           qrConfig,
           qrMessage => {
               if (!isProcessing) {
@@ -197,58 +193,14 @@
               }
           },
           (errorMessage) => {
-              console.warn("Start attempt failed with constraints. Error:", errorMessage);
-              
-              if (constraints.facingMode && constraints.facingMode.exact === "environment") {
-                   startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
-              } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
-                  fallbackToCameraIdLookup(); 
-              } else {
-                  failCameraStart("Camera access failed entirely. Check permissions and HTTPS.");
-              }
+              // This unified fail handler is necessary because the error could be anything from security block to conflict
+              failCameraStart("Camera access failed. Check HTTPS/Security and permissions.");
           }
       ).catch(err => {
-          console.error("Start error with constraints:", err);
-          
-          if (constraints.facingMode && constraints.facingMode.exact === "environment") {
-              startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
-          } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
-              fallbackToCameraIdLookup(); 
-          } else {
-              failCameraStart("Final camera start attempt failed. Hardware access denied.");
-          }
+          failCameraStart("Camera access denied or device is busy. (Promise Rejection)");
       });
   }
 
-  function fallbackToCameraIdLookup() {
-      Html5Qrcode.getCameras().then(cameras => {
-        if (!cameras || cameras.length === 0) {
-          failCameraStart("No cameras found on device or browser access is restricted.");
-          return;
-        }
-
-        const firstCamera = cameras[0];
-        
-        html5QrCode.start(
-            { deviceId: { exact: firstCamera.id } },
-            qrConfig,
-            qrMessage => {
-                if (!isProcessing) {
-                    handleScan(qrMessage);
-                }
-            },
-            (errorMessage) => {
-                failCameraStart("Failed even with specific camera ID. Hardware issue suspected.");
-            }
-        ).catch(err => {
-            failCameraStart("Final camera start attempt failed. Hardware access denied.");
-        });
-
-      }).catch(err => {
-        failCameraStart("Could not enumerate cameras. The browser is blocked from listing devices.");
-      });
-  }
-  
   // --- END CAMERA START LOGIC ---
 
 
