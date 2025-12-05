@@ -20,6 +20,11 @@
       max-height: 200px;
       overflow-y: auto;
     }
+    /* Add a visual border to the reader area even when the camera is loading/off */
+    #reader:not(.d-none) {
+        border: 2px dashed #0d6efd;
+        min-height: 250px;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -104,7 +109,6 @@
   let userLocation = '';
   let preferredCameraId = null; 
   let html5QrCode = null; 
-  // NEW FLAG: Controls when to accept a scan result
   let isProcessing = false; 
 
   const qrConfig = {
@@ -154,69 +158,95 @@
   function startScanner() {
     document.getElementById("scanner-controls").classList.add("d-none");
     document.getElementById("reader").classList.remove("d-none"); 
-    isProcessing = false; // Ensure we are ready to scan
+    isProcessing = false; 
 
     // Stop existing scanner if running before creating new one
     if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
         html5QrCode.stop().then(() => {
             createScannerInstance();
-            findCameraAndStart();
+            findCameraAndStart(); // Start the new scanner
         }).catch(e => {
             console.warn("Could not stop old scanner, starting new one anyway:", e);
             createScannerInstance();
-            findCameraAndStart();
+            findCameraAndStart(); // Start the new scanner
         });
     } else {
         createScannerInstance();
-        findCameraAndStart();
+        findCameraAndStart(); // Start the new scanner
     }
   }
+
+  // --- NEW CAMERA START LOGIC TO PRIORITIZE REAR CAMERA ---
 
   function findCameraAndStart() {
-    if (preferredCameraId) {
-        startCameraWithId(preferredCameraId);
-        return;
-    }
-    
-    // Find camera ID
-    Html5Qrcode.getCameras().then(cameras => {
-      if (!cameras || cameras.length === 0) {
-        alert("No camera found.");
-        document.getElementById("scanner-controls").classList.remove("d-none");
-        return;
-      }
-
-      const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[0];
-      preferredCameraId = backCamera.id;
-      
-      startCameraWithId(preferredCameraId);
-
-    }).catch(err => {
-      console.error("Camera error:", err);
-      alert("Could not access camera.");
-      document.getElementById("scanner-controls").classList.remove("d-none");
-    });
+      // 1. Try to start the camera using the 'environment' facing mode first, 
+      // as this is the most reliable way on modern mobile browsers.
+      startCameraWithConstraints({ facingMode: { exact: "environment" } });
   }
-  
-  function startCameraWithId(cameraId) {
+
+  function startCameraWithConstraints(constraints) {
       html5QrCode.start(
-        { deviceId: { exact: cameraId } },
-        qrConfig,
-        qrMessage => {
-          // NO PAUSE! Use the isProcessing flag instead.
-          if (!isProcessing) {
-              handleScan(qrMessage);
+          constraints,
+          qrConfig,
+          qrMessage => {
+              if (!isProcessing) {
+                  handleScan(qrMessage);
+              }
+          },
+          (errorMessage) => {
+              console.warn("Start attempt failed with constraints. Error:", errorMessage);
+              
+              // Only call fallback logic if we failed with the initial 'environment' constraint
+              if (constraints && constraints.facingMode) {
+                  fallbackToCameraIdLookup();
+              } else {
+                  console.error("Camera access failed entirely.");
+                  alert("Could not access camera. Please check permissions.");
+                  document.getElementById("scanner-controls").classList.remove("d-none");
+              }
           }
-        },
-        errorMessage => {
-          // console.warn("Scan error", errorMessage);
-        }
       ).catch(err => {
-        console.error("Start error:", err);
-        alert("Unable to start camera. Please check permissions.");
+          console.error("Start error with constraints:", err);
+          
+          // Fallback if the promise rejects (often an access denial)
+          if (constraints && constraints.facingMode) {
+              fallbackToCameraIdLookup();
+          } else {
+              alert("Unable to start camera. Please check permissions.");
+              document.getElementById("scanner-controls").classList.remove("d-none");
+          }
+      });
+  }
+
+  function fallbackToCameraIdLookup() {
+      if (preferredCameraId) {
+          startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
+          return;
+      }
+      
+      // Find camera ID
+      Html5Qrcode.getCameras().then(cameras => {
+        if (!cameras || cameras.length === 0) {
+          alert("No camera found after fallback.");
+          document.getElementById("scanner-controls").classList.remove("d-none");
+          return;
+        }
+
+        // Prioritize "back" label or the LAST camera (often the rear one)
+        const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[cameras.length - 1] || cameras[0];
+        preferredCameraId = backCamera.id;
+        
+        startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
+
+      }).catch(err => {
+        console.error("Camera error during fallback:", err);
+        alert("Could not access camera.");
         document.getElementById("scanner-controls").classList.remove("d-none");
       });
   }
+  
+  // --- END NEW CAMERA START LOGIC ---
+
 
   // Stops scanner and shows the Restart button for manual input
   function submitManualSku() {
@@ -241,6 +271,7 @@
             console.warn("Error stopping scanner during manual entry:", err);
         });
     } else {
+        // If the scanner was already stopped or not started
         document.getElementById("scanner-controls").classList.remove("d-none");
         html5QrCode = null;
     }
@@ -251,15 +282,22 @@
     isProcessing = true; 
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
-    document.getElementById('quantity').value = '';
+    document.getElementById('quantity').value = '1'; // Default to 1
     document.getElementById('form-section').classList.remove('d-none');
     document.getElementById('quantity').focus();
+    
+    // Vibrate the device if supported for feedback
+    if ('vibrate' in navigator) {
+      navigator.vibrate(100); 
+    }
   }
 
   function addEntry() {
-    const qty = parseInt(document.getElementById('quantity').value);
-    if (!qty || qty <= 0) {
-      alert("Enter a valid quantity.");
+    const qtyInput = document.getElementById('quantity');
+    const qty = parseInt(qtyInput.value);
+    
+    if (isNaN(qty) || qty <= 0) {
+      alert("Enter a valid quantity (must be 1 or greater).");
       return;
     }
 
@@ -279,9 +317,6 @@
     
     // Reset flag to allow scanning of the next QR code immediately
     isProcessing = false; 
-    
-    // If the scanner was stopped (manual entry), the restart button is visible.
-    // If the scanner is running (QR scan), it continues to run.
   }
 
   // --- Helper Functions ---
@@ -291,6 +326,7 @@
     tableBody.innerHTML = '';
     const reversedEntries = [...entries].reverse(); 
     reversedEntries.forEach((item, index) => {
+      // Calculate original index (1-based count from the start of the full list)
       const originalIndex = entries.length - index; 
       const row = `<tr>
         <td>${originalIndex}</td>
@@ -316,6 +352,8 @@
     entries = [];
     saveEntries();
     updateTable();
+    // Re-hide the form section if it was visible
+    document.getElementById('form-section').classList.add('d-none');
   }
 
   function exportToExcel() {
