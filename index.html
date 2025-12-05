@@ -156,19 +156,28 @@
       updateTable();
     }
 
+    // --- FIX: GUARANTEED SCREEN TRANSITION FIRST ---
     document.getElementById("login-screen").classList.add("d-none");
     document.getElementById("main-app").classList.remove("d-none");
     
-    // FIX: Wrap startScanner in a try/catch to ensure UI transition works even if camera fails
-    try {
-        startScanner();
-    } catch (e) {
-        console.error("Critical error during camera start on login:", e);
-        // Ensure controls are visible if camera fails immediately
-        document.getElementById("reader").classList.add("d-none");
-        document.getElementById("scanner-controls").classList.remove("d-none");
-        alert("Camera failed to start immediately. Please use Manual Entry or try 'Restart Scanner'.");
-    }
+    // Attempt to start camera after a small delay to ensure DOM update
+    setTimeout(() => {
+        try {
+            startScanner();
+        } catch (e) {
+            console.error("Camera failed to start after login:", e);
+            // If it fails immediately, ensure the user can still use manual entry
+            failCameraStart("Camera hardware or permissions failed to initialize.");
+        }
+    }, 100); 
+  }
+
+  function failCameraStart(message) {
+      console.error(message);
+      // Ensure the user can still use the app
+      document.getElementById("reader").classList.add("d-none");
+      document.getElementById("scanner-controls").classList.remove("d-none");
+      alert("Error starting camera: " + message + " Please use the Manual Entry option.");
   }
 
   function startScanner() {
@@ -193,14 +202,6 @@
   }
 
   // --- CAMERA START LOGIC ---
-
-  function failCameraStart(message) {
-      console.error(message);
-      // Ensure the user can still use the app
-      document.getElementById("reader").classList.add("d-none");
-      document.getElementById("scanner-controls").classList.remove("d-none");
-      alert("Error starting camera: " + message);
-  }
 
   function findCameraAndStart() {
       // 1. Try to start the camera using the 'environment' facing mode first.
