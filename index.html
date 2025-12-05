@@ -165,7 +165,6 @@
     document.getElementById("reader").classList.remove("d-none"); 
     isProcessing = false; 
 
-    // Stop existing scanner if running before creating new one
     if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
         html5QrCode.stop().then(() => {
             createScannerInstance();
@@ -200,11 +199,9 @@
           (errorMessage) => {
               console.warn("Start attempt failed with constraints. Error:", errorMessage);
               
-              // Fallback logic: If we failed trying to find the environment camera, try the user camera.
               if (constraints.facingMode && constraints.facingMode.exact === "environment") {
                    startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
               } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
-                  // If both environment and user failed, try generic ID lookup
                   fallbackToCameraIdLookup(); 
               } else {
                   failCameraStart("Camera access failed entirely. Check permissions and HTTPS.");
@@ -213,7 +210,6 @@
       ).catch(err => {
           console.error("Start error with constraints:", err);
           
-          // Fallback if the promise rejects
           if (constraints.facingMode && constraints.facingMode.exact === "environment") {
               startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
           } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
@@ -231,10 +227,8 @@
           return;
         }
 
-        // Use the first camera found as a final attempt via its ID
         const firstCamera = cameras[0];
         
-        // Final attempt using the Device ID
         html5QrCode.start(
             { deviceId: { exact: firstCamera.id } },
             qrConfig,
@@ -285,13 +279,29 @@
     }
   }
 
-  function handleScan(sku) {
+  async function handleScan(sku) {
     if (isProcessing) return;
     isProcessing = true; 
 
+    // 1. STOP SCANNER & SHOW RESTART BUTTON
+    if (html5QrCode && html5QrCode.getState() !== Html5Qrcode.Html5QrcodeStates.NOT_STARTED) {
+        try {
+            await html5QrCode.stop();
+            document.getElementById("reader").classList.add("d-none");
+            // *** FIX: Show the restart button after a successful scan ***
+            document.getElementById("scanner-controls").classList.remove("d-none");
+            html5QrCode = null;
+        } catch (err) {
+            console.warn("Could not stop scanner after scan:", err);
+        }
+    }
+
+
+    // 2. FILL FORM
     lastScannedSKU = sku;
     document.getElementById('skuName').value = sku;
-    document.getElementById('quantity').value = '1'; 
+    // *** FIX: Remove default quantity of 1 ***
+    document.getElementById('quantity').value = ''; 
     document.getElementById('form-section').classList.remove('d-none');
     document.getElementById('quantity').focus();
     
