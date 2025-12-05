@@ -111,17 +111,12 @@
   let html5QrCode = null; 
   let isProcessing = false; 
 
+  // FIX: REMOVED CONSTRAINTS BLOCK TO ENSURE MAX COMPATIBILITY AND MINIMUM HARDWARE CONFLICTS
   const qrConfig = {
-    // Optimized settings for better detection
     fps: 20, 
     qrbox: { width: 250, height: 250 },
     aspectRatio: 1.0,
     rememberLastUsedCamera: true,
-    // Request high resolution for better focus/detection
-    constraints: { 
-        width: { min: 1024, ideal: 1280 }, 
-        height: { min: 768, ideal: 960 }
-    },
     experimentalFeatures: {
       useBarCodeDetectorIfSupported: true
     }
