@@ -111,7 +111,7 @@
   let html5QrCode = null; 
   let isProcessing = false; 
 
-  // FIX: REMOVED CONSTRAINTS BLOCK TO ENSURE MAX COMPATIBILITY AND MINIMUM HARDWARE CONFLICTS
+  // FINAL: MOST PERMISSIVE CONFIGURATION
   const qrConfig = {
     fps: 20, 
     qrbox: { width: 250, height: 250 },
@@ -161,7 +161,6 @@
             startScanner();
         } catch (e) {
             console.error("Camera failed to start after login:", e);
-            // If it fails immediately, ensure the user can still use manual entry
             failCameraStart("Camera hardware or permissions failed to initialize.");
         }
     }, 100); 
@@ -196,16 +195,12 @@
     }
   }
 
-  // --- CAMERA START LOGIC ---
+  // --- FINAL SIMPLIFIED CAMERA START LOGIC ---
 
   function findCameraAndStart() {
-      // 1. Try to start the camera using the 'environment' facing mode first.
-      startCameraWithConstraints({ facingMode: { exact: "environment" } });
-  }
-
-  function startCameraWithConstraints(constraints) {
+      // 1. Try to start the camera using the default video feed (no constraints).
       html5QrCode.start(
-          constraints,
+          { }, // Empty constraints object - rely on browser default
           qrConfig,
           qrMessage => {
               if (!isProcessing) {
@@ -213,55 +208,48 @@
               }
           },
           (errorMessage) => {
-              console.warn("Start attempt failed with constraints. Error:", errorMessage);
-              
-              // Fallback logic check: If we failed using facingMode, try ID lookup.
-              if (constraints && constraints.facingMode) {
-                  fallbackToCameraIdLookup();
-              } else if (constraints && constraints.deviceId) {
-                   failCameraStart("Failed with specific camera ID. Check camera permissions.");
-              } else {
-                  failCameraStart("Camera access failed entirely. Check device support.");
-              }
+              console.warn("Direct start failed. Error:", errorMessage);
+              fallbackToCameraIdLookup(); 
           }
       ).catch(err => {
-          console.error("Start error with constraints:", err);
-          
-          // Fallback if the promise rejects (e.g., access denial)
-          if (constraints && constraints.facingMode) {
-              fallbackToCameraIdLookup();
-          } else if (constraints && constraints.deviceId) {
-               failCameraStart("Failed with specific camera ID. Check camera permissions.");
-          } else {
-              failCameraStart("Camera access failed entirely. Check device support.");
-          }
+          console.error("Camera promise rejection:", err);
+          fallbackToCameraIdLookup(); 
       });
   }
 
   function fallbackToCameraIdLookup() {
-      if (preferredCameraId) {
-          startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
-          return;
-      }
-      
       Html5Qrcode.getCameras().then(cameras => {
         if (!cameras || cameras.length === 0) {
-          failCameraStart("No cameras found on device.");
+          failCameraStart("No cameras found on device or browser access is restricted.");
           return;
         }
 
-        // Prioritize "back" label, or the LAST camera (rear), or the FIRST camera.
-        const backCamera = cameras.find(c => c.label.toLowerCase().includes("back")) || cameras[cameras.length - 1] || cameras[0];
-        preferredCameraId = backCamera.id;
-        
-        startCameraWithConstraints({ deviceId: { exact: preferredCameraId } });
+        // Use the first camera found (Camera ID lookup)
+        const firstCamera = cameras[0];
+        preferredCameraId = firstCamera.id;
+
+        // Try starting with the camera ID
+        html5QrCode.start(
+            { deviceId: { exact: preferredCameraId } },
+            qrConfig,
+            qrMessage => {
+                if (!isProcessing) {
+                    handleScan(qrMessage);
+                }
+            },
+            (errorMessage) => {
+                failCameraStart("Failed even with specific camera ID. Hardware issue suspected.");
+            }
+        ).catch(err => {
+            failCameraStart("Final camera start attempt failed. Hardware issue suspected.");
+        });
 
       }).catch(err => {
-        failCameraStart("Could not enumerate cameras. Permissions denied?");
+        failCameraStart("Could not enumerate cameras. Ensure you are running on HTTPS.");
       });
   }
   
-  // --- END CAMERA START LOGIC ---
+  // --- END FINAL SIMPLIFIED CAMERA START LOGIC ---
 
 
   function submitManualSku() {
