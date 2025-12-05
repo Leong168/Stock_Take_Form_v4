@@ -107,7 +107,6 @@
   let entries = [];
   let userName = '';
   let userLocation = '';
-  let preferredCameraId = null; 
   let html5QrCode = null; 
   let isProcessing = false; 
 
@@ -182,10 +181,10 @@
     }
   }
 
-  // --- CAMERA START LOGIC (Prioritizes 'environment' facing mode) ---
+  // --- CAMERA START LOGIC (Priority Rear, Fallback Front) ---
 
   function findCameraAndStart() {
-      // 1. Try to start the camera using the 'environment' facing mode first.
+      // 1. Try to start the camera using the 'environment' facing mode (Rear Camera).
       startCameraWithConstraints({ facingMode: { exact: "environment" } });
   }
 
@@ -201,11 +200,12 @@
           (errorMessage) => {
               console.warn("Start attempt failed with constraints. Error:", errorMessage);
               
-              // Fallback logic: If we failed using facingMode, try ID lookup.
-              if (constraints && constraints.facingMode) {
-                  fallbackToCameraIdLookup();
-              } else if (constraints && constraints.deviceId) {
-                   failCameraStart("Failed with specific camera ID. The device may be busy.");
+              // Fallback logic: If we failed trying to find the environment camera, try the user camera.
+              if (constraints.facingMode && constraints.facingMode.exact === "environment") {
+                   startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
+              } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
+                  // If both environment and user failed, try generic ID lookup
+                  fallbackToCameraIdLookup(); 
               } else {
                   failCameraStart("Camera access failed entirely. Check permissions and HTTPS.");
               }
@@ -213,9 +213,11 @@
       ).catch(err => {
           console.error("Start error with constraints:", err);
           
-          // Fallback if the promise rejects (e.g., access denial)
-          if (constraints && constraints.facingMode) {
-              fallbackToCameraIdLookup();
+          // Fallback if the promise rejects
+          if (constraints.facingMode && constraints.facingMode.exact === "environment") {
+              startCameraWithConstraints({ facingMode: { exact: "user" } }); // Try front camera
+          } else if (constraints.facingMode && constraints.facingMode.exact === "user") {
+              fallbackToCameraIdLookup(); 
           } else {
               failCameraStart("Final camera start attempt failed. Hardware access denied.");
           }
@@ -229,10 +231,24 @@
           return;
         }
 
-        // Use the first camera found as a final attempt
+        // Use the first camera found as a final attempt via its ID
         const firstCamera = cameras[0];
         
-        startCameraWithConstraints({ deviceId: { exact: firstCamera.id } });
+        // Final attempt using the Device ID
+        html5QrCode.start(
+            { deviceId: { exact: firstCamera.id } },
+            qrConfig,
+            qrMessage => {
+                if (!isProcessing) {
+                    handleScan(qrMessage);
+                }
+            },
+            (errorMessage) => {
+                failCameraStart("Failed even with specific camera ID. Hardware issue suspected.");
+            }
+        ).catch(err => {
+            failCameraStart("Final camera start attempt failed. Hardware access denied.");
+        });
 
       }).catch(err => {
         failCameraStart("Could not enumerate cameras. The browser is blocked from listing devices.");
@@ -270,7 +286,6 @@
   }
 
   function handleScan(sku) {
-    // Flag set to prevent re-scanning the same code while user inputs quantity
     if (isProcessing) return;
     isProcessing = true; 
 
@@ -308,7 +323,6 @@
     saveEntries();
     document.getElementById('form-section').classList.add('d-none');
     
-    // Reset flag to allow scanning of the next QR code immediately
     isProcessing = false; 
   }
 
