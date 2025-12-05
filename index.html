@@ -111,7 +111,6 @@
   let html5QrCode = null; 
   let isProcessing = false; 
 
-  // FINAL: MOST PERMISSIVE CONFIGURATION
   const qrConfig = {
     fps: 20, 
     qrbox: { width: 250, height: 250 },
@@ -126,10 +125,6 @@
     html5QrCode = new Html5Qrcode("reader");
   }
 
-  /*
-   * CRITICAL FIX: The login function now ONLY handles the screen transition
-   * and data loading, removing all camera start attempts.
-   */
   function submitLogin() {
     const name = document.getElementById("username").value.trim();
     const location = document.getElementById("location").value.trim();
@@ -157,13 +152,10 @@
     // GUARANTEED SCREEN TRANSITION
     document.getElementById("login-screen").classList.add("d-none");
     document.getElementById("main-app").classList.remove("d-none");
-    
-    // The user MUST now click "Start/Restart Scanner"
   }
 
   function failCameraStart(message) {
       console.error(message);
-      // Ensure the user can still use the app
       document.getElementById("reader").classList.add("d-none");
       document.getElementById("scanner-controls").classList.remove("d-none");
       alert("Error starting camera: " + message + " Please use the Manual Entry option.");
@@ -190,12 +182,16 @@
     }
   }
 
-  // --- CAMERA START LOGIC (Simplest Call) ---
+  // --- CAMERA START LOGIC (Prioritizes 'environment' facing mode) ---
 
   function findCameraAndStart() {
-      // This uses NO constraints {} - it just asks the browser for the default video stream.
+      // 1. Try to start the camera using the 'environment' facing mode first.
+      startCameraWithConstraints({ facingMode: { exact: "environment" } });
+  }
+
+  function startCameraWithConstraints(constraints) {
       html5QrCode.start(
-          {}, 
+          constraints,
           qrConfig,
           qrMessage => {
               if (!isProcessing) {
@@ -203,12 +199,43 @@
               }
           },
           (errorMessage) => {
-              // If the simplest start fails, we go straight to the fail state
-              failCameraStart("Camera failed using the simplest start method. The issue is likely external (HTTPS/Conflicts).");
+              console.warn("Start attempt failed with constraints. Error:", errorMessage);
+              
+              // Fallback logic: If we failed using facingMode, try ID lookup.
+              if (constraints && constraints.facingMode) {
+                  fallbackToCameraIdLookup();
+              } else if (constraints && constraints.deviceId) {
+                   failCameraStart("Failed with specific camera ID. The device may be busy.");
+              } else {
+                  failCameraStart("Camera access failed entirely. Check permissions and HTTPS.");
+              }
           }
       ).catch(err => {
-          // If the promise rejects (a definitive failure)
-          failCameraStart("Camera access denied by browser/OS.");
+          console.error("Start error with constraints:", err);
+          
+          // Fallback if the promise rejects (e.g., access denial)
+          if (constraints && constraints.facingMode) {
+              fallbackToCameraIdLookup();
+          } else {
+              failCameraStart("Final camera start attempt failed. Hardware access denied.");
+          }
+      });
+  }
+
+  function fallbackToCameraIdLookup() {
+      Html5Qrcode.getCameras().then(cameras => {
+        if (!cameras || cameras.length === 0) {
+          failCameraStart("No cameras found on device or browser access is restricted.");
+          return;
+        }
+
+        // Use the first camera found as a final attempt
+        const firstCamera = cameras[0];
+        
+        startCameraWithConstraints({ deviceId: { exact: firstCamera.id } });
+
+      }).catch(err => {
+        failCameraStart("Could not enumerate cameras. The browser is blocked from listing devices.");
       });
   }
   
